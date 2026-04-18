@@ -13,6 +13,9 @@
 - [Getting Started](#getting-started)
 - [Usage](#usage)
 - [How It Works](#how-it-works)
+  - [Pipeline Overview](#pipeline-overview)
+  - [Step-by-Step Data Flow](#step-by-step-data-flow)
+  - [Key Source Files](#key-source-files)
 - [Configuration](#configuration)
 - [Running Tests](#running-tests)
 - [Limitations](#limitations)
@@ -154,34 +157,92 @@ python main.py evaluate \
 
 ## How It Works
 
-### 1. Ingestion
+### Pipeline Overview
+
+```mermaid
+flowchart LR
+    A["PDFs in data/sample_corpus"] --> B["Ingestion"]
+    B --> C["Chunking + role labeling"]
+    C --> D["Embedding"]
+    D --> E["Saved index\nmanifest.json\nchunks.jsonl\nvectors.npy"]
+    E --> F["User question"]
+    F --> G["Vector + lexical retrieval"]
+    G --> H["Answer generation"]
+    H --> I["Answer + citations + context"]
+    E --> J["Benchmark evaluation"]
+    J --> K["benchmark_report.json/.md"]
+```
+
+### Step-by-Step Data Flow
+
+**1. Ingestion** — `src/mm_rag/ingestion.py`
+
+Opens each PDF with `pypdf`, extracts layout text page by page, and classifies every block by role:
+
+| Block Type | Description |
+|------------|-------------|
+| `text` | Standard prose paragraphs |
+| `table` | Detected table-like regions, preserved as structured evidence |
+| `chart_metadata` | Figure/chart metadata and captions |
+| `table_caption` | Table captions extracted separately |
+| `footnote` | Notes and footnote-like content |
+
+Embedded images are also extracted when present.
+
+**2. Chunking** — `src/mm_rag/models.py` (`Chunk`)
+
+Each chunk carries: document name · page number · modality · content · citation · section title · role metadata. Text is split with overlap; tables are preserved wholesale.
+
+**3. Text Normalization** — `src/mm_rag/utils.py`
+
+Cleans spacing, normalizes Unicode, fixes PDF token artifacts, and tokenizes for retrieval.
+
+**4. Embedding** — `src/mm_rag/embeddings.py`
+
+| Backend | Method | Requires Key? |
+|---------|--------|:-------------:|
+| `local` | Hashing-based vectorizer (fully offline) | ❌ |
+| `gemini` | Google AI Studio retrieval embeddings | ✅ Free |
+
+**5. Index Storage** — `src/mm_rag/retrieval.py`
 
 ```
-PDF Report
-    │
-    ├── Text blocks        → section-aware chunking
-    ├── Table-like regions → preserved as structured evidence
-    ├── Figure metadata    → searchable caption chunks
-    ├── Footnotes/notes    → indexed as supporting evidence
-    └── Embedded images    → metadata chunks (+ Gemini captions if enabled)
+storage/index/
+├── manifest.json    ← index metadata
+├── chunks.jsonl     ← all chunk records
+└── vectors.npy      ← embedding matrix
 ```
 
-### 2. Chunking
+**6. Retrieval**
 
-- Text split into overlapping, section-labeled chunks
-- Tables preserved wholesale to avoid breaking structured evidence
-- Images converted to text-rich metadata for unified indexing
+Query is embedded → cosine similarity computed against saved vectors → lexical overlap and section overlap apply a reranking bonus → top-k chunks returned.
 
-### 3. Retrieval
+**7. Answer Generation** — `src/mm_rag/qa.py`
 
-- **Local:** deterministic hashing vectorizer with cosine similarity
-- **Gemini:** retrieval-optimized embeddings via Google AI Studio
-- **Hybrid ranking** fuses lexical and vector scores for section-aware queries
+- **Local extractive:** builds answer directly from retrieved chunks with inline citations
+- **Gemini:** grounded generation constrained strictly to retrieved context
 
-### 4. Answer Generation
+Output always includes: answer text · citations · retrieved context.
 
-- **Local:** extractive synthesis with inline source citations
-- **Gemini:** grounded generation constrained to retrieved context only
+**8. Benchmark Evaluation** — `src/mm_rag/evaluation.py`
+
+Runs questions from `data/benchmarks/economic_report_questions.json` and writes:
+- `storage/evaluation/benchmark_report.json`
+- `storage/evaluation/benchmark_report.md`
+
+---
+
+### Key Source Files
+
+| File | Role |
+|------|------|
+| `main.py` | CLI entry point |
+| `streamlit_app.py` | Browser UI |
+| `src/mm_rag/ingestion.py` | PDF parsing and block classification |
+| `src/mm_rag/embeddings.py` | Local and Gemini embedding backends |
+| `src/mm_rag/retrieval.py` | Vector index build, save, and search |
+| `src/mm_rag/qa.py` | Answer composition and citation |
+| `src/mm_rag/evaluation.py` | Benchmark runner |
 
 ---
 
@@ -215,7 +276,6 @@ Tests cover retrieval correctness and QA behavior across both local and Gemini b
 | No OCR without external tooling | Install Tesseract or use Gemini vision for scanned pages |
 | Assignment PDF is a poor test corpus | Use real policy/financial reports for meaningful results |
 
----
 
 ## References
 
