@@ -1,173 +1,231 @@
-# Multi-Modal Document Intelligence RAG
+# 🧠 Multi-Modal Document Intelligence RAG
+### DSAI 413 — Assignment 1
 
-A runnable **DSAI 413 - Assignment 1** codebase for a real-document, multi-modal RAG system. It ingests policy or financial PDF reports, extracts text, table-like regions, image metadata, and figure-adjacent content, builds a citation-aware vector index, and answers questions through a Streamlit UI or CLI chatbot.
+> A citation-aware, multi-modal Retrieval-Augmented Generation system that ingests real policy and financial PDF reports, extracts text, tables, figures, and image metadata, and answers questions through a Streamlit UI or CLI — with **zero required API keys**.
 
-The project is designed to stay **free to run**:
+---
 
-- Default mode uses a fully local hashing-based vector index and extractive answer composer.
-- Optional Google AI Studio integration uses a **free-tier Gemini API key** for stronger image captioning, embeddings, and answer generation.
+## 📌 Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [How It Works](#how-it-works)
+- [Configuration](#configuration)
+- [Running Tests](#running-tests)
+- [Limitations](#limitations)
+- [Submission Checklist](#submission-checklist)
+- [References](#references)
+
+---
+
+## Overview
+
+This project implements a **multi-modal RAG pipeline** that works on real-world documents — IMF Article IV reports, policy papers, and financial statements — rather than toy datasets.
+
+It supports two operating modes:
+
+| Mode | Embedding | Answer Generation | API Key Required? |
+|------|-----------|-------------------|:-----------------:|
+| **Local** | Hashing-based cosine similarity | Extractive synthesis | ❌ No |
+| **Gemini** | Google AI Studio retrieval embeddings | Grounded generation | ✅ Free tier |
+
+---
 
 ## Features
 
-- Multi-modal ingestion for PDF text, table-like blocks, embedded images, figure/chart metadata, and note/footnote-like content
-- Structural chunking with section-aware citations
-- Unified vector retrieval over normalized chunk representations
-- Optional Gemini generation and embeddings through Google AI Studio
-- Local fallback that still works with **no API key**
-- Streamlit web UI for browser-based demos and video recording
-- CLI demo app for `ingest`, `ask`, `chat`, `inspect`, and `evaluate`
-- Benchmark runner for assignment-style evaluation questions
-- Unit tests for retrieval and QA behavior
+- 📄 **Multi-modal PDF ingestion** — text, tables, figures, footnotes, embedded images
+- 🗂️ **Section-aware chunking** with overlap and structural preservation
+- 🔍 **Hybrid retrieval** — lexical + vector ranking for accurate section-level results
+- 📎 **Citation-aware answers** — every response traces back to source chunks
+- 🖼️ **Optional image captioning** via Gemini for scanned or visual-heavy PDFs
+- 🌐 **Streamlit UI** for browser-based demos and recordings
+- 💻 **CLI interface** — `ingest`, `ask`, `chat`, `inspect`, `evaluate`
+- 📊 **Benchmark runner** for assignment-style evaluation questions
+- 🧪 **Unit tests** for retrieval and QA behavior
 
-## Project Layout
+---
 
-```text
-data/
-main.py
-src/mm_rag/
-tests/
-TECHNICAL_REPORT.md
-VIDEO_DEMO_SCRIPT.md
+## Project Structure
+
+```
+mm-rag/
+│
+├── data/
+│   ├── sample_corpus/          # Place your PDF reports here
+│   └── benchmarks/
+│       └── economic_report_questions.json
+│
+├── src/
+│   └── mm_rag/                 # Core library
+│       ├── ingestion/          # PDF parsing, chunking, image handling
+│       ├── retrieval/          # Vector index, hybrid ranking
+│       └── generation/         # Extractive + Gemini answer composer
+│
+├── tests/                      # Unit tests
+├── storage/                    # Generated index and evaluation output
+│
+├── main.py                     # CLI entry point
+├── streamlit_app.py            # Streamlit UI
+├── .env.example                # API key template
+├── TECHNICAL_REPORT.md
+└── VIDEO_DEMO_SCRIPT.md
 ```
 
-## Quick Start
+---
 
-### 1. Optional: add your free Google AI Studio key
+## Getting Started
 
-Copy `.env.example` to `.env` and fill in:
+### Prerequisites
+
+- Python 3.9+
+- `pip install -r requirements.txt`
+
+### 1. (Optional) Add your free Google AI Studio key
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
 
 ```env
 GOOGLE_API_KEY=your_google_ai_studio_key
 ```
 
-If `.env` is missing, the app still runs in local mode.
+> If `.env` is missing, the app runs in **local mode** automatically.
 
-### 2. Put real report PDFs somewhere accessible
+### 2. Add PDF reports to your corpus
 
-You can point the ingestor at:
+Place at least two real policy or financial reports in `data/sample_corpus/`.
 
-- a single PDF file
-- a folder containing PDFs
-- multiple files and folders
+Recommended sources: IMF Article IV documents, World Bank reports, government fiscal reviews.
 
-Recommended corpus:
+---
 
-- [Sample corpus guide](C:/Users/Magic/Documents/Codex/DSAI413/data/sample_corpus/README.md)
-- Put at least two real policy reports in `data/sample_corpus`
+## Usage
 
-### 3. Build the index
+### Build the Index
 
-```powershell
-python main.py ingest "data\sample_corpus" --backend local --index-dir storage\index
+```bash
+# Local mode (no API key needed)
+python main.py ingest "data/sample_corpus" --backend local --index-dir storage/index
+
+# Gemini embeddings (requires free API key)
+python main.py ingest "data/sample_corpus" --backend gemini --index-dir storage/index
 ```
 
-Force fully local mode:
+### Ask a Question
 
-```powershell
-python main.py ingest "C:\path\to\documents" --backend local
+```bash
+python main.py ask "What are the main fiscal risks discussed in the reports?" \
+    --index-dir storage/index
+
+# Show retrieved evidence alongside the answer
+python main.py ask "Which table contains macroeconomic indicators?" \
+    --index-dir storage/index --show-context
 ```
 
-Use Gemini embeddings if your free key is configured:
+### Interactive Chat
 
-```powershell
-python main.py ingest "C:\path\to\documents" --backend gemini
+```bash
+python main.py chat --index-dir storage/index
+# Type `exit` to quit
 ```
 
-### 4. Ask a question
+### Launch the Streamlit UI
 
-```powershell
-python main.py ask "What are the main fiscal risks discussed in the reports?" --index-dir storage\index
-```
-
-Show the retrieved evidence:
-
-```powershell
-python main.py ask "Which table contains the main macroeconomic indicators?" --index-dir storage\index --show-context
-```
-
-### 5. Start the interactive chatbot
-
-```powershell
-python main.py chat --index-dir storage\index
-```
-
-Type `exit` to quit.
-
-### 6. Launch the Streamlit UI
-
-```powershell
+```bash
 python -m streamlit run streamlit_app.py
 ```
 
-### 7. Run the benchmark suite
+### Run the Benchmark Suite
 
-```powershell
-python main.py evaluate --index-dir storage\index --benchmarks data\benchmarks\economic_report_questions.json --output-dir storage\evaluation
+```bash
+python main.py evaluate \
+    --index-dir storage/index \
+    --benchmarks data/benchmarks/economic_report_questions.json \
+    --output-dir storage/evaluation
 ```
 
-## Assignment-Aligned Workflow
-
-Use the project on **real reports**, not the assignment sheet:
-
-```powershell
-python main.py ingest "data\sample_corpus" --backend local --index-dir storage\index
-python main.py ask "What are the main fiscal risks discussed across the reports?" --index-dir storage\index --show-context
-python main.py evaluate --index-dir storage\index --benchmarks data\benchmarks\economic_report_questions.json
-python main.py chat --index-dir storage\index
-```
+---
 
 ## How It Works
 
-### Ingestion
+### 1. Ingestion
 
-- Extract page text with `pypdf` layout-aware parsing
-- Detect headings and table-like text blocks heuristically
-- Label figure/chart metadata, table captions, and source-note-like blocks
-- Extract embedded images when present
-- Optionally caption images with Gemini for better retrieval
+```
+PDF Report
+    │
+    ├── Text blocks        → section-aware chunking
+    ├── Table-like regions → preserved as structured evidence
+    ├── Figure metadata    → searchable caption chunks
+    ├── Footnotes/notes    → indexed as supporting evidence
+    └── Embedded images    → metadata chunks (+ Gemini captions if enabled)
+```
 
-### Chunking
+### 2. Chunking
 
-- Text is split into section-aware chunks with overlap
-- Table-like blocks are preserved as structured evidence chunks
-- Images are converted to text-rich metadata chunks for unified indexing
-- Figure/chart metadata and footnote-like content are preserved as searchable evidence
+- Text split into overlapping, section-labeled chunks
+- Tables preserved wholesale to avoid breaking structured evidence
+- Images converted to text-rich metadata for unified indexing
 
-### Retrieval
+### 3. Retrieval
 
-- Local mode: deterministic hashing-based vectorizer with cosine similarity
-- Gemini mode: retrieval-optimized embeddings using Google AI Studio free-tier API
-- Hybrid lexical + vector ranking improves section-aware benchmark questions
+- **Local:** deterministic hashing vectorizer with cosine similarity
+- **Gemini:** retrieval-optimized embeddings via Google AI Studio
+- **Hybrid ranking** fuses lexical and vector scores for section-aware queries
 
-### Answer Generation
+### 4. Answer Generation
 
-- Local mode: extractive evidence synthesis with inline citations
-- Gemini mode: grounded answer generation constrained to retrieved context
+- **Local:** extractive synthesis with inline source citations
+- **Gemini:** grounded generation constrained to retrieved context only
 
-## Notes and Limitations
+---
 
-- Fully scanned PDFs work best when you provide a Gemini key, because image captioning improves coverage for non-extractable text.
-- Without OCR tooling installed, the local-only mode cannot read text that is present only inside raster page images.
-- The benchmark suite is qualitative rather than gold-label-scored; it is meant for demo and report support.
-- The assignment PDF is useful only as a smoke test. For the real submission, use policy or financial reports such as IMF Article IV documents.
+## Configuration
 
-## Testing
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--backend` | `local` or `gemini` | `local` |
+| `--index-dir` | Path to store/load the vector index | `storage/index` |
+| `--show-context` | Print retrieved chunks alongside the answer | `False` |
+| `--output-dir` | Benchmark evaluation output directory | `storage/evaluation` |
 
-```powershell
+---
+
+## Running Tests
+
+```bash
 python -m unittest discover -s tests -v
 ```
 
-## Suggested Submission Items
+Tests cover retrieval correctness and QA behavior across both local and Gemini backends.
 
-- Codebase: this project
-- Demo: Streamlit UI or CLI flow using `ingest` + `evaluate` + `chat`
-- Report: [TECHNICAL_REPORT.md](C:/Users/Magic/Documents/Codex/DSAI413/TECHNICAL_REPORT.md)
-- Video outline: [VIDEO_DEMO_SCRIPT.md](C:/Users/Magic/Documents/Codex/DSAI413/VIDEO_DEMO_SCRIPT.md)
+---
 
-## Google References
+## Limitations
 
-This project's optional Gemini integration follows official Google AI for Developers documentation:
+| Limitation | Workaround |
+|------------|------------|
+| Scanned/raster-only PDFs lose text in local mode | Provide a Gemini key for image captioning |
+| No gold-label scoring in benchmark suite | Evaluation is qualitative; used for demo support |
+| No OCR without external tooling | Install Tesseract or use Gemini vision for scanned pages |
+| Assignment PDF is a poor test corpus | Use real policy/financial reports for meaningful results |
 
-- [Gemini API reference](https://ai.google.dev/api)
-- [Embeddings guide](https://ai.google.dev/gemini-api/docs/embeddings)
-- [Billing and free tier overview](https://ai.google.dev/gemini-api/docs/billing/)
+---
+
+## References
+
+- [Google Gemini API Reference](https://ai.google.dev/api)
+- [Gemini Embeddings Guide](https://ai.google.dev/gemini-api/docs/embeddings)
+- [Google AI Studio Free Tier](https://ai.google.dev/gemini-api/docs/billing/)
+- [pypdf Documentation](https://pypdf.readthedocs.io/)
+
+---
+
+<div align="center">
+  <sub>Built for DSAI 413 · Multi-Modal RAG · Assignment 1</sub>
+</div>
